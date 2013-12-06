@@ -56,6 +56,9 @@ team_t team = {
 
 static char *heap_listp = 0;
 static void *extend_heap(size_t words);
+static void place(void *bp, size_t asize);
+static void *find_fit(size_t asize);
+static void *coalesce(void *bp);
 
 /* 
  * mm_init - initialize the malloc package.
@@ -83,6 +86,8 @@ int mm_init(void)
 void *mm_malloc(size_t size)
 {
     size_t asize;
+    size_t extendsize;
+    char *bp;
     
     if (heap_listp == 0) {
         mm_init();
@@ -97,13 +102,36 @@ void *mm_malloc(size_t size)
     } else {
         asize = ((size + DSIZE + (DSIZE -1))/DSIZE) * DSIZE;
     }
+    
+    if((bp = find_fit(asize)) != NULL) {
+        place(bp, asize);
+        return bp;
+    }
+    
+    extendsize = MAX(asize, CHUNKSIZE);
+    if((bp = extend_heap(extendsize/WSIZE)) == NULL)
+        return NULL;
+    place(bp, asize);
+    return bp;
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
+    if(bp == 0)
+        return;
+    
+    size_t size = GET_SIZE(HDRP(bp));
+    
+    if(heap_listp == 0) {
+        mm_init();
+    }
+    
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
+    coalesce(bp);
 }
 
 /*
