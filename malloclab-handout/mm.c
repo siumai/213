@@ -35,20 +35,44 @@ team_t team = {
     ""
 };
 
-/* single word (4) or double word (8) alignment */
-#define ALIGNMENT 8
+#define WSIZE       4
+#define DSIZE       8
+#define CHUNKSIZE   (1<<12)
 
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
+#define PACK(size, alloc)   ((size) | (alloc))
 
+/*read and write a word at address p*/
+#define GET(p)          (*(unsigned int *)(p))
+#define PUT(p, val)     (*(unsigned int *)(p) = (val))
 
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+#define GET_SIZE(p)     (GET(p) & ~0x7)
+#define GET_ALLOC(p)    (GET(p) & 0x1)
+
+#define HDRP(bp)    ((char *)(bp) - WSIZE)
+#define FTRP(bp)    ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+
+#define NEXT_BLKP   ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
+#define PREV_BLKP   ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
+
+static char *heap_listp = 0;
+static void *extend_heap(size_t words);
 
 /* 
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
+    if((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
+        return -1;
+    PUT(heap_listp, 0);
+    PUT(heap_listp + (1*WSIZE), PACK(DSIZE,1));
+    PUT(heap_listp + (2*WSIZE), PACK(DSIZE,1));
+    PUT(heap_listp + (3*WSIZE), PACK(0,1));
+    heap_listp += (2*WSIZE);
+    
+    if (extend_heap(CHUNKSIZE/WSIZE) == NULL) {
+        return -1;
+    }
     return 0;
 }
 
@@ -58,13 +82,20 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
-	return NULL;
-    else {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
+    size_t asize;
+    
+    if (heap_listp == 0) {
+        mm_init();
+    }
+    
+    if (size == 0) {
+        return NULL;
+    }
+    
+    if (size <= DSIZE) {
+        asize = 2*DSIZE;
+    } else {
+        asize = ((size + DSIZE + (DSIZE -1))/DSIZE) * DSIZE;
     }
 }
 
